@@ -54,7 +54,33 @@ events), checked with a throwaway analysis script:
 
 <!-- Which tools, what you asked, what came back wrong, what you changed. "I didn't use AI" is fine too. -->
 
-I used Claude Code (Claude Opus) as a pair programmer throughout.
+I used Claude Code (Claude Opus) heavily, and I want to be plain about the split.
+
+**What the AI did.** It wrote almost all of the code, tests and documentation, ran the API
+dump and analysis scripts, and did the benchmarks.
+
+**What I did.** I set the direction, made the calls and pushed back where things didn't hold
+up. The decisions that changed the result:
+
+- **Scope and order.** Correctness first (level 1 is 40%), then the other levels in order, and
+  stopping new features near the 3-hour cap.
+- **Tooling.** Node/Express and Luxon, and a single `CLAUDE.md` for the rules instead of two
+  overlapping files.
+- **The 0-minute numbers.** I questioned why so many rows showed 0 or empty. That surfaced that
+  ~43% of answered requests score 0 because they were answered outside business hours. The API
+  had to stay as specified, so we added the explanation to the pages instead.
+- **An unmeasured performance claim.** I asked where "a full recompute takes ~3 s" came from
+  and what happens at scale. The figure had been measured loosely. Profiling showed the real
+  cost, which led to the business-clock rewrite (8x faster, identical output). I asked for the
+  algorithm to be explained until I understood it before approving it.
+- **Time zones.** I checked that each site is computed in its own time zone and that only
+  rule 4 skips closed hours, not rule 6.
+- **Watching the client page.** I had it checked for client messages, and approved the CSV
+  work when one arrived.
+- **Self-review.** I asked for an honest self-assessment. It found the 5-minute reference reload
+  could miss level 3's 60 s window, and I approved the fix.
+
+How the work itself went:
 
 - **Reading the brief.** I had it summarise the rules, contract and API, then list where the
   rules are ambiguous. That list became the "What I assumed" section and the edge-case tests.
