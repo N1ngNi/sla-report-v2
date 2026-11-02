@@ -44,9 +44,10 @@ export class Sync {
 
   async syncOnce() {
     if (Date.now() - this.lastReferenceAt >= this.referenceMs) await this.loadReference();
-    await this.drainFeed();
+    const applied = await this.drainFeed();
     this.store.flush();
     this.lastSyncedAt = new Date();
+    if (applied > 0 && this.ready) this.log(`applied ${applied} changes`);
   }
 
   // Sites, holidays and staff. Applied only when they changed, since each
@@ -72,7 +73,9 @@ export class Sync {
 
   // Read the feed from our cursor until it says we're up to date.
   // An expired cursor (410) means replaying from the start; upserts make that safe.
+  // Returns how many items were applied.
   async drainFeed() {
+    let applied = 0;
     for (;;) {
       let page;
       try {
@@ -84,8 +87,9 @@ export class Sync {
         continue;
       }
       for (const item of page.data) this.store.apply(item);
+      applied += page.data.length;
       if (page.next_cursor) this.cursor = page.next_cursor;
-      if (!page.has_more) return;
+      if (!page.has_more) return applied;
     }
   }
 }
