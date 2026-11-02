@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDateRange, buildReport } from "./report.js";
+import { parseBrowseQuery, Browser } from "./browse.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,9 +27,11 @@ export function createApp({ store, sync } = {}) {
     res.status(503).json({ error: "still loading helpdesk data" });
   };
 
+  const browser = store && new Browser({ store });
   app.get("/api/requests", requireReady, (req, res) => {
-    // TODO (level 4): filters, sorting and cursor pagination, see docs/contract.md.
-    res.status(501).json({ error: "not implemented" });
+    const params = parseBrowseQuery(req.query, browser);
+    if (params.error) return res.status(400).json({ error: params.error });
+    res.json(browser.page(params));
   });
 
   app.get("/api/sla-report", requireReady, (req, res) => {

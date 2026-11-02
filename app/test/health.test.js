@@ -54,6 +54,18 @@ test("GET /api/sla-report returns the contract shape", async () => {
   });
 });
 
+test("GET /api/requests pages rows and rejects bad parameters", async () => {
+  await withServer({ ...readyDeps, store: { rows: readyDeps.store.rows, version: 1 } }, async (get) => {
+    const res = await get("/api/requests?from=2026-10-01&to=2026-10-31&sort=-response_business_minutes");
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.data.map((r) => r.id), [1]);
+    assert.equal(body.next_cursor, null);
+    assert.equal((await get("/api/requests?from=2026-10-01&to=2026-10-31&cursor=forged")).status, 400);
+    assert.equal((await get("/api/requests?from=2026-10-01&to=2026-10-31&limit=500")).status, 400);
+  });
+});
+
 test("GET /api/sla-report rejects bad ranges with 400", async () => {
   await withServer(readyDeps, async (get) => {
     for (const qs of ["", "?from=2026-10-01", "?from=2026-10-31&to=2026-10-01", "?from=x&to=y"]) {
