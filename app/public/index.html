@@ -2,29 +2,111 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Response-time report</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; color: #222; }
+    form { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+    label { display: flex; flex-direction: column; font-size: 12px; color: #555; }
+    table { border-collapse: collapse; margin: 8px 0 24px; }
+    th, td { border: 1px solid #ddd; padding: 4px 10px; text-align: left; }
+    th { background: #f5f5f5; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: #888; }
+    nav a { margin-right: 12px; }
+  </style>
 </head>
 <body>
+  <nav><a href="/">Report</a><a href="/requests.html">Browse requests</a></nav>
   <h1>Response-time report</h1>
+  <p class="muted">Dates are local to each request's site. Targets: High 60, Medium 240, Low/none 480 business minutes.</p>
   <form id="f">
     <label>From <input type="date" name="from" required></label>
     <label>To <input type="date" name="to" required></label>
     <button type="submit">Run report</button>
   </form>
-  <p id="status"></p>
-  <table id="report" border="1">
-    <thead></thead>
-    <tbody></tbody>
-  </table>
+  <p id="status" class="muted"></p>
+
+  <div id="results" hidden>
+    <h2>By site</h2>
+    <table id="sites"></table>
+    <h2>By responder</h2>
+    <table id="responders"></table>
+    <h2>Requests</h2>
+    <table id="requests"></table>
+  </div>
+
   <script>
-    document.getElementById("f").addEventListener("submit", async (e) => {
+    const SITE_NAMES = { 11: "Singapore", 12: "Sydney", 13: "Jakarta" };
+    const form = document.getElementById("f");
+    const status = document.getElementById("status");
+
+    // Default to last month so the page shows something useful straight away.
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const last = new Date(today.getFullYear(), today.getMonth(), 0);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    form.from.value = iso(first);
+    form.to.value = iso(last);
+
+    const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : "–");
+    const show = (v) => (v === null || v === undefined ? '<span class="muted">–</span>' : String(v));
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+    function table(el, headers, rows) {
+      el.innerHTML =
+        "<thead><tr>" + headers.map((h) => `<th>${h}</th>`).join("") + "</tr></thead><tbody>" +
+        rows.map((r) => "<tr>" + r.map((c) => `<td class="${typeof c === "number" ? "num" : ""}">${c}</td>`).join("") + "</tr>").join("") +
+        "</tbody>";
+    }
+
+    function bySite(requests) {
+      const sites = new Map();
+      for (const r of requests) {
+        const s = sites.get(r.site_id) ?? { total: 0, responded: 0, minutes: [], within: 0, finished: 0, late: 0 };
+        s.total++;
+        if (r.response_business_minutes !== null) { s.responded++; s.minutes.push(r.response_business_minutes); }
+        if (r.within_target) s.within++;
+        if (r.completed_late !== null) s.finished++;
+        if (r.completed_late) s.late++;
+        sites.set(r.site_id, s);
+      }
+      return [...sites].sort((a, b) => a[0] - b[0]).map(([id, s]) => {
+        s.minutes.sort((a, b) => a - b);
+        const median = s.minutes.length ? s.minutes[Math.floor(s.minutes.length / 2)] : null;
+        return [esc(SITE_NAMES[id] ?? `Site ${id}`), s.total, s.responded, show(median), pct(s.within, s.responded), `${s.late} of ${s.finished} (${pct(s.late, s.finished)})`];
+      });
+    }
+
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const params = new URLSearchParams(new FormData(e.target));
-      const res = await fetch("/api/sla-report?" + params);
+      status.textContent = "Loading…";
+      const started = performance.now();
+      const res = await fetch("/api/sla-report?" + new URLSearchParams(new FormData(form)));
       const data = await res.json();
-      // TODO: render `data` into the table.
-      document.getElementById("status").textContent = res.status + " " + JSON.stringify(data);
+      if (!res.ok) {
+        status.textContent = `${res.status}: ${data.error ?? JSON.stringify(data)}`;
+        return;
+      }
+      status.textContent = `${data.requests.length} requests, ${data.from} to ${data.to} (${Math.round(performance.now() - started)} ms)`;
+      document.getElementById("results").hidden = false;
+
+      table(document.getElementById("sites"),
+        ["Site", "Requests", "Responded", "Median response (business min)", "Within target", "Completed late"],
+        bySite(data.requests));
+
+      table(document.getElementById("responders"),
+        ["Responder", "Requests", "Within target", "Completed late"],
+        data.responders.sort((a, b) => b.requests - a.requests)
+          .map((r) => [esc(r.name), r.requests, `${r.within_target} (${pct(r.within_target, r.requests)})`, r.completed_late]));
+
+      table(document.getElementById("requests"),
+        ["Request", "Site", "Responder", "Response (business min)", "Within target", "Completed late"],
+        data.requests.sort((a, b) => a.id - b.id)
+          .map((r) => [r.id, esc(SITE_NAMES[r.site_id] ?? r.site_id), r.responder ? esc(r.responder) : show(null), show(r.response_business_minutes), show(r.within_target), show(r.completed_late)]));
     });
+
+    form.requestSubmit();
   </script>
 </body>
 </html>
