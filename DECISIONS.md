@@ -95,6 +95,13 @@ I used Claude Code (Claude Opus) as a pair programmer throughout.
   is set, so a restart invalidates old cursors (they get `400`).
 - **Front end:** two plain HTML pages, a report with site and responder summaries and a browse
   page, with no build step. Polish was out of scope.
+- **Explaining 0-minute responses.** In October about 43% of answered requests score 0 business
+  minutes, almost all because they were answered outside opening hours (e.g. created 01:46,
+  answered 06:47, before an 08:00 opening). The API keeps the exact contract shape. Our pages
+  ask for `?details=true`, which adds `response_elapsed_minutes` and `response_note`, so a 0 is
+  shown as "answered outside business hours, 5 h 0 m after creation". The site table gains an
+  "answered outside hours" column. That is arguably the most useful number for the director:
+  a large share of requests is handled before the clock starts.
 - **With more time:** an end-to-end test that replays a recorded feed through the HTTP API,
   metrics on sync lag, and asking the client how "within target" should treat requests that
   never got a response (they are `null` today, as rule 7 says, and so count as neither).

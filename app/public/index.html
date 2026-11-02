@@ -52,6 +52,19 @@
     const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : "–");
     const show = (v) => (v === null || v === undefined ? '<span class="muted">–</span>' : String(v));
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const duration = (min) => (min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} m` : `${min} m`);
+
+    // Business minutes, plus why a 0 is a 0 (from the page-only details fields).
+    function responseCell(r) {
+      if (r.response_business_minutes === null) return '<span class="muted">no response yet</span>';
+      const notes = {
+        "outside business hours": `answered outside business hours, ${duration(r.response_elapsed_minutes)} after creation`,
+        "before creation": "response logged before creation (data issue)",
+        "under a minute": "answered within a minute",
+      };
+      const note = notes[r.response_note];
+      return note ? `0 <span class="muted">· ${note}</span>` : String(r.response_business_minutes);
+    }
 
     function table(el, headers, rows) {
       el.innerHTML =
@@ -63,9 +76,10 @@
     function bySite(requests) {
       const sites = new Map();
       for (const r of requests) {
-        const s = sites.get(r.site_id) ?? { total: 0, responded: 0, minutes: [], within: 0, finished: 0, late: 0 };
+        const s = sites.get(r.site_id) ?? { total: 0, responded: 0, outside: 0, minutes: [], within: 0, finished: 0, late: 0 };
         s.total++;
         if (r.response_business_minutes !== null) { s.responded++; s.minutes.push(r.response_business_minutes); }
+        if (r.response_note === "outside business hours") s.outside++;
         if (r.within_target) s.within++;
         if (r.completed_late !== null) s.finished++;
         if (r.completed_late) s.late++;
@@ -74,7 +88,7 @@
       return [...sites].sort((a, b) => a[0] - b[0]).map(([id, s]) => {
         s.minutes.sort((a, b) => a - b);
         const median = s.minutes.length ? s.minutes[Math.floor(s.minutes.length / 2)] : null;
-        return [esc(SITE_NAMES[id] ?? `Site ${id}`), s.total, s.responded, show(median), pct(s.within, s.responded), `${s.late} of ${s.finished} (${pct(s.late, s.finished)})`];
+        return [esc(SITE_NAMES[id] ?? `Site ${id}`), s.total, s.responded, `${s.outside} (${pct(s.outside, s.responded)})`, show(median), pct(s.within, s.responded), `${s.late} of ${s.finished} (${pct(s.late, s.finished)})`];
       });
     }
 
@@ -82,7 +96,9 @@
       e.preventDefault();
       status.textContent = "Loading…";
       const started = performance.now();
-      const res = await fetch("/api/sla-report?" + new URLSearchParams(new FormData(form)));
+      const params = new URLSearchParams(new FormData(form));
+      params.set("details", "true");
+      const res = await fetch("/api/sla-report?" + params);
       const data = await res.json();
       if (!res.ok) {
         status.textContent = `${res.status}: ${data.error ?? JSON.stringify(data)}`;
@@ -92,7 +108,7 @@
       document.getElementById("results").hidden = false;
 
       table(document.getElementById("sites"),
-        ["Site", "Requests", "Responded", "Median response (business min)", "Within target", "Completed late"],
+        ["Site", "Requests", "Responded", "Answered outside hours (0 min)", "Median response (business min)", "Within target", "Completed late"],
         bySite(data.requests));
 
       table(document.getElementById("responders"),
@@ -103,7 +119,7 @@
       table(document.getElementById("requests"),
         ["Request", "Site", "Responder", "Response (business min)", "Within target", "Completed late"],
         data.requests.sort((a, b) => a.id - b.id)
-          .map((r) => [r.id, esc(SITE_NAMES[r.site_id] ?? r.site_id), r.responder ? esc(r.responder) : show(null), show(r.response_business_minutes), show(r.within_target), show(r.completed_late)]));
+          .map((r) => [r.id, esc(SITE_NAMES[r.site_id] ?? r.site_id), r.responder ? esc(r.responder) : show(null), responseCell(r), show(r.within_target), show(r.completed_late)]));
     });
 
     form.requestSubmit();

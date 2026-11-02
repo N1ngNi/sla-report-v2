@@ -62,9 +62,23 @@
 
     const show = (v) => (v === null || v === undefined ? '<span class="muted">–</span>' : String(v));
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const duration = (min) => (min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} m` : `${min} m`);
+
+    // Business minutes, plus why a 0 is a 0 (from the page-only details fields).
+    function responseCell(r) {
+      if (r.response_business_minutes === null) return '<span class="muted">no response yet</span>';
+      const notes = {
+        "outside business hours": `answered outside business hours, ${duration(r.response_elapsed_minutes)} after creation`,
+        "before creation": "response logged before creation (data issue)",
+        "under a minute": "answered within a minute",
+      };
+      const note = notes[r.response_note];
+      return note ? `0 <span class="muted">· ${note}</span>` : String(r.response_business_minutes);
+    }
 
     async function load(cursor) {
       const params = new URLSearchParams(query);
+      params.set("details", "true");
       if (cursor) params.set("cursor", cursor);
       status.textContent = "Loading…";
       const res = await fetch("/api/requests?" + params);
@@ -81,7 +95,7 @@
         "<thead><tr><th>Request</th><th>Site</th><th>Responder</th><th>Response (business min)</th><th>Within target</th><th>Completed late</th></tr></thead><tbody>" +
         body.data.map((r) => `<tr><td class="num">${r.id}</td><td>${esc(SITE_NAMES[r.site_id] ?? r.site_id)}</td>` +
           `<td>${r.responder ? `${esc(r.responder)} <span class="muted">#${r.responder_id}</span>` : show(null)}</td>` +
-          `<td class="num">${show(r.response_business_minutes)}</td><td>${show(r.within_target)}</td><td>${show(r.completed_late)}</td></tr>`).join("") +
+          `<td class="num">${responseCell(r)}</td><td>${show(r.within_target)}</td><td>${show(r.completed_late)}</td></tr>`).join("") +
         "</tbody>";
     }
 
