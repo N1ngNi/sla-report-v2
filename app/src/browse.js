@@ -13,7 +13,8 @@ const MAX_LIMIT = 200;
 const POSITIVE_INT = /^[1-9]\d*$/;
 
 // Parse and validate the query. Returns {error} or the parsed parameters.
-export function parseBrowseQuery(query, browser) {
+// For the CSV export, `limit` and `cursor` are ignored, as the client asked.
+export function parseBrowseQuery(query, browser, { csv = false } = {}) {
   const range = parseDateRange(query);
   if (!range) return { error: "from and to must be YYYY-MM-DD dates with from <= to" };
   const params = {
@@ -35,6 +36,7 @@ export function parseBrowseQuery(query, browser) {
     if (!SORTS.includes(query.sort)) return { error: `sort must be one of ${SORTS.join(", ")}` };
     params.sort = query.sort;
   }
+  if (csv) return params;
   if (query.limit !== undefined) {
     const limit = typeof query.limit === "string" && POSITIVE_INT.test(query.limit) ? Number(query.limit) : 0;
     if (limit < 1 || limit > MAX_LIMIT) return { error: `limit must be an integer from 1 to ${MAX_LIMIT}` };
@@ -76,6 +78,15 @@ function compareKeys(a, b) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+// Matching rows with their sort keys, sorted, optionally only those after key `after`.
+function select(rows, p, after) {
+  return [...rows]
+    .filter((row) => matches(row, p))
+    .map((row) => ({ row, key: sortKey(row, p.sort) }))
+    .filter(({ key }) => !after || compareKeys(key, after) > 0)
+    .sort((a, b) => compareKeys(a.key, b.key));
+}
+
 export class Browser {
   constructor({ store, secret = process.env.CURSOR_SECRET || randomBytes(32).toString("hex"), maxSnapshots = 50 }) {
     this.store = store;
@@ -99,19 +110,18 @@ export class Browser {
   page(p) {
     const snap = this.snapshot(p.cursor?.v);
     const rows = snap.rows ?? [...this.store.rows.values()]; // evicted snapshot: live rows
-    const after = p.cursor?.k;
-    const selected = rows
-      .filter((row) => matches(row, p))
-      .map((row) => ({ row, key: sortKey(row, p.sort) }))
-      .filter(({ key }) => !after || compareKeys(key, after) > 0)
-      .sort((a, b) => compareKeys(a.key, b.key));
-
+    const selected = select(rows, p, p.cursor?.k);
     const data = selected.slice(0, p.limit);
     const last = data.at(-1);
     const next_cursor = selected.length > p.limit
       ? this.encodeCursor({ v: snap.version, k: last.key, q: queryKey(p) })
       : null;
     return { data: data.map(({ row }) => publicRow(row, p.details)), next_cursor };
+  }
+
+  // Every matching row from the live data, in sort order (the CSV export).
+  all(p) {
+    return select(this.store.rows.values(), p).map(({ row }) => publicRow(row));
   }
 
   sign(body) {

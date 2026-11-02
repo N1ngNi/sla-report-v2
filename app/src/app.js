@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDateRange, buildReport, wantsDetails } from "./report.js";
 import { parseBrowseQuery, Browser } from "./browse.js";
+import { toCsv } from "./csv.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,15 @@ export function createApp({ store, sync } = {}) {
     const params = parseBrowseQuery(req.query, browser);
     if (params.error) return res.status(400).json({ error: params.error });
     res.json(browser.page(params));
+  });
+
+  // Same filters and sort as /api/requests, every matching row, as CSV.
+  app.get("/api/requests.csv", requireReady, (req, res) => {
+    const params = parseBrowseQuery(req.query, browser, { csv: true });
+    if (params.error) return res.status(400).json({ error: params.error });
+    res.type("text/csv");
+    res.attachment(`requests-${params.from}-to-${params.to}.csv`);
+    res.send(toCsv(browser.all(params)));
   });
 
   app.get("/api/sla-report", requireReady, (req, res) => {

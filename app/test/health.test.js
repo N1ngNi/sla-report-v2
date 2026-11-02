@@ -79,6 +79,32 @@ test("GET /api/requests pages rows and rejects bad parameters", async () => {
   });
 });
 
+test("GET /api/requests.csv returns every matching row as CSV", async () => {
+  const rows = new Map([
+    [1, { ...row, id: 1, response_business_minutes: 42 }],
+    [2, { ...row, id: 2, responder: 'Tan, "Ben"', response_business_minutes: 5, completed_late: null }],
+    [3, { ...row, id: 3, site_id: 12, response_business_minutes: 9 }],
+    [4, { ...row, id: 4, created_date: "2026-11-02" }],
+  ]);
+  await withServer({ store: { rows, version: 1 }, sync: { ready: true } }, async (get) => {
+    const res = await get("/api/requests.csv?from=2026-10-01&to=2026-10-31&site_id=11&sort=response_business_minutes&limit=1&cursor=ignored");
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /^text\/csv/);
+    assert.match(res.headers.get("content-disposition"), /attachment; filename="requests-2026-10-01-to-2026-10-31\.csv"/);
+    assert.equal(
+      await res.text(),
+      "id,site_id,responder_id,responder,response_business_minutes,within_target,completed_late\n" +
+        '2,11,304,"Tan, ""Ben""",5,true,\n' +
+        "1,11,304,Benjamin Tan,42,true,false\n",
+    );
+    assert.equal((await get("/api/requests.csv?from=2026-10-01&to=2026-10-31&late=maybe")).status, 400);
+    assert.equal((await get("/api/requests.csv?to=2026-10-31")).status, 400);
+  });
+  await withServer({ sync: { ready: false } }, async (get) => {
+    assert.equal((await get("/api/requests.csv?from=2026-10-01&to=2026-10-31")).status, 503);
+  });
+});
+
 test("GET /api/sla-report rejects bad ranges with 400", async () => {
   await withServer(readyDeps, async (get) => {
     for (const qs of ["", "?from=2026-10-01", "?from=2026-10-31&to=2026-10-01", "?from=x&to=y"]) {
