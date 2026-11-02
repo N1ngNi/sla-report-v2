@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browse requests</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; color: #222; }
+    form { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+    label { display: flex; flex-direction: column; font-size: 12px; color: #555; }
+    table { border-collapse: collapse; margin: 8px 0; }
+    th, td { border: 1px solid #ddd; padding: 4px 10px; text-align: left; }
+    th { background: #f5f5f5; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: #888; }
+    nav a { margin-right: 12px; }
+  </style>
+</head>
+<body>
+  <nav><a href="/">Report</a><a href="/requests.html">Browse requests</a></nav>
+  <h1>Browse requests</h1>
+  <form id="f">
+    <label>From <input type="date" name="from" required></label>
+    <label>To <input type="date" name="to" required></label>
+    <label>Site
+      <select name="site_id"><option value="">All</option><option value="11">Singapore</option><option value="12">Sydney</option><option value="13">Jakarta</option></select>
+    </label>
+    <label>Responder id <input type="number" name="responder_id" min="1" style="width:7em"></label>
+    <label>Within target
+      <select name="within_target"><option value="">Any</option><option>true</option><option>false</option></select>
+    </label>
+    <label>Completed late
+      <select name="late"><option value="">Any</option><option>true</option><option>false</option></select>
+    </label>
+    <label>Sort
+      <select name="sort">
+        <option value="id">Id ↑</option><option value="-id">Id ↓</option>
+        <option value="response_business_minutes">Response ↑</option><option value="-response_business_minutes">Response ↓</option>
+      </select>
+    </label>
+    <label>Per page <input type="number" name="limit" min="1" max="200" value="50" style="width:5em"></label>
+    <button type="submit">Apply</button>
+  </form>
+  <p id="status" class="muted"></p>
+  <table id="rows"></table>
+  <p><button id="first" type="button" disabled>First page</button> <button id="next" type="button" disabled>Next page</button></p>
+
+  <script>
+    const SITE_NAMES = { 11: "Singapore", 12: "Sydney", 13: "Jakarta" };
+    const form = document.getElementById("f");
+    const status = document.getElementById("status");
+    const nextBtn = document.getElementById("next");
+    const firstBtn = document.getElementById("first");
+    let query = null;
+    let nextCursor = null;
+    let pageNo = 1;
+
+    const today = new Date();
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    form.from.value = iso(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    form.to.value = iso(new Date(today.getFullYear(), today.getMonth(), 0));
+
+    const show = (v) => (v === null || v === undefined ? '<span class="muted">–</span>' : String(v));
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+    async function load(cursor) {
+      const params = new URLSearchParams(query);
+      if (cursor) params.set("cursor", cursor);
+      status.textContent = "Loading…";
+      const res = await fetch("/api/requests?" + params);
+      const body = await res.json();
+      if (!res.ok) {
+        status.textContent = `${res.status}: ${body.error ?? JSON.stringify(body)}`;
+        return;
+      }
+      nextCursor = body.next_cursor;
+      nextBtn.disabled = !nextCursor;
+      firstBtn.disabled = pageNo === 1;
+      status.textContent = `Page ${pageNo}, ${body.data.length} rows${nextCursor ? "" : " (last page)"}`;
+      document.getElementById("rows").innerHTML =
+        "<thead><tr><th>Request</th><th>Site</th><th>Responder</th><th>Response (business min)</th><th>Within target</th><th>Completed late</th></tr></thead><tbody>" +
+        body.data.map((r) => `<tr><td class="num">${r.id}</td><td>${esc(SITE_NAMES[r.site_id] ?? r.site_id)}</td>` +
+          `<td>${r.responder ? `${esc(r.responder)} <span class="muted">#${r.responder_id}</span>` : show(null)}</td>` +
+          `<td class="num">${show(r.response_business_minutes)}</td><td>${show(r.within_target)}</td><td>${show(r.completed_late)}</td></tr>`).join("") +
+        "</tbody>";
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      // Leave out empty filters so the API sees only what was chosen.
+      query = [...new FormData(form)].filter(([, v]) => v !== "");
+      pageNo = 1;
+      load();
+    });
+    nextBtn.addEventListener("click", () => { pageNo += 1; load(nextCursor); });
+    firstBtn.addEventListener("click", () => { pageNo = 1; load(); });
+
+    form.requestSubmit();
+  </script>
+</body>
+</html>
