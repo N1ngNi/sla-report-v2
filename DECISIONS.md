@@ -86,9 +86,20 @@ I used Claude Code (Claude Opus) as a pair programmer throughout.
   persist the store and the feed cursor (SQLite or a JSON file) so a restart only catches up.
 - **Live updates by polling** the change feed every 10 s, well inside the 60 s target. Calls are
   spaced 300 ms apart: the initial load took 165 calls and ~53 s with zero `429`s.
-- **Reference data** (sites, holidays, staff) is re-read every 5 minutes. When it changes, every
-  row is recomputed, which takes about 3 s and blocks the event loop. A worker thread would
-  avoid that.
+- **Business time: simple first, then measured and optimised.** The first version walked every
+  local day between creation and response, building that day's opening hours with Luxon,
+  because it maps one-to-one onto rule 4 and is easy to check. A profile then showed ~77% of a
+  full recompute (~2.9 s for 11,150 rows) was spent rebuilding the same days' hours over and
+  over. It now uses a per-site *business clock*: open windows built once per local day, each
+  with the business seconds accumulated before it. Business time is `clock(end) - clock(start)`,
+  found with two binary searches. Together with parsing deadlines only for completed requests,
+  a full recompute takes ~0.36 s (8x faster), and a staff reload ~37 ms instead of ~2.9 s
+  (only rows whose responder was renamed are recomputed). Every row came out identical to the
+  old version on the full practice dataset, and the original time tests are unchanged.
+- **Reference data** (sites, holidays, staff) is re-read every 5 minutes. A site or holiday
+  change recomputes every row (~0.4 s, blocking the event loop briefly). At 10x the data, the
+  bottleneck becomes the rate-limited initial feed replay (~8 min), so the next step there is
+  persisting the store and feed cursor.
 - **Browsing** reads from snapshots of the rows (the last 50 versions). A walk that outlives its
   snapshot falls back to keyset paging over live rows, which is still correct for rows whose
   sort value doesn't change. Cursors are signed with a per-process secret unless `CURSOR_SECRET`
