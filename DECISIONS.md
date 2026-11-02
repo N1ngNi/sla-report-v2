@@ -54,6 +54,47 @@ events), checked with a throwaway analysis script:
 
 <!-- Which tools, what you asked, what came back wrong, what you changed. "I didn't use AI" is fine too. -->
 
+I used Claude Code (Claude Opus) as a pair programmer throughout.
+
+- **Reading the brief.** I had it summarise the rules, contract and API, then list where the
+  rules are ambiguous. That list became the "What I assumed" section and the edge-case tests.
+- **Project rules.** `CLAUDE.md` holds the rules, the architecture and the conventions, so every
+  AI session works from the same spec instead of re-deriving it.
+- **Tests first.** For the time and rules modules, tests were written and seen failing before
+  the code. Hand-built fixtures cover each rule's edge cases (DST, holidays, revert chains,
+  reopened requests and so on).
+- **Checking against real data.** Before wiring anything up, it dumped the API to `tmp/` and ran
+  throwaway analysis scripts. Those found the duplicate feed items, the rate limit and the stale
+  actor names. I also hand-checked a few computed rows against the raw events.
+- **What it got wrong, and what changed.**
+  - Two test expectations were wrong: a key-sort order, and a fixture default it overlooked.
+    Caught by running the tests.
+  - The first live check showed no change in 45 s. Instead of assuming the sync worked, it read
+    the feed directly, found the data changes in small batches, and added a log line per poll
+    to prove updates land.
+  - A plain keyset cursor would skip or repeat a row whose response time changes mid-walk, for
+    example when it gets its first response. Paging from a snapshot fixed that, and a test
+    covers it.
+
 ## Trade-offs and what I would do next
 
 <!-- What you left out to stay within 3 hours, and what you would do with more time. -->
+
+- **In memory, no database.** About 12,000 requests and 46,000 events fit easily in memory, and
+  the six-month report is a filter over precomputed rows (~50 ms). The cost is that a restart
+  re-reads the whole feed, which takes about a minute (`/ready` is 503 meanwhile). Next step:
+  persist the store and the feed cursor (SQLite or a JSON file) so a restart only catches up.
+- **Live updates by polling** the change feed every 10 s, well inside the 60 s target. Calls are
+  spaced 300 ms apart: the initial load took 165 calls and ~53 s with zero `429`s.
+- **Reference data** (sites, holidays, staff) is re-read every 5 minutes. When it changes, every
+  row is recomputed, which takes about 3 s and blocks the event loop. A worker thread would
+  avoid that.
+- **Browsing** reads from snapshots of the rows (the last 50 versions). A walk that outlives its
+  snapshot falls back to keyset paging over live rows, which is still correct for rows whose
+  sort value doesn't change. Cursors are signed with a per-process secret unless `CURSOR_SECRET`
+  is set, so a restart invalidates old cursors (they get `400`).
+- **Front end:** two plain HTML pages, a report with site and responder summaries and a browse
+  page, with no build step. Polish was out of scope.
+- **With more time:** an end-to-end test that replays a recorded feed through the HTTP API,
+  metrics on sync lag, and asking the client how "within target" should treat requests that
+  never got a response (they are `null` today, as rule 7 says, and so count as neither).

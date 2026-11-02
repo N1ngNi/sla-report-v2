@@ -1,4 +1,28 @@
-# Response-time report: starter kit
+# Response-time report
+
+For each Bluebay site, how fast teams respond to helpdesk requests and how often work finishes
+late, for any date range in the last six months.
+
+## Run it
+
+1. Put the helpdesk details in `.env` next to `docker-compose.yml`:
+   ```
+   HELPDESK_URL=...
+   HELPDESK_TOKEN=...
+   ```
+2. `docker compose up --build`, then wait about a minute for the first load. Check
+   `http://localhost:8080/ready`; it says `{"ready": true}` when done.
+3. Open `http://localhost:8080`, pick a date range and press **Run report**. **Browse requests**
+   lists the same rows with filters, sorting and paging. Changes in the helpdesk appear within
+   about 10 seconds.
+
+APIs: `GET /api/sla-report?from=YYYY-MM-DD&to=YYYY-MM-DD` and `GET /api/requests` (see
+`docs/contract.md`). Tests: `docker compose run --rm app test`. Decisions and data findings are in
+`DECISIONS.md`.
+
+---
+
+# Starter kit notes
 
 The rules are in the brief on your invitation page. Everything else is here.
 
