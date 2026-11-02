@@ -1,10 +1,12 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseDateRange, buildReport } from "./report.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-export function createApp() {
+// `store` holds the computed rows; `sync` says whether the initial load is done.
+export function createApp({ store, sync } = {}) {
   const app = express();
 
   app.use(express.static(path.join(here, "..", "public")));
@@ -14,20 +16,27 @@ export function createApp() {
   });
 
   app.get("/ready", (req, res) => {
-    // TODO: answer 200 {"ready": true} once your app can serve six-month reports (level 2).
-    res.status(503).json({ ready: false });
+    if (sync?.ready) res.json({ ready: true });
+    else res.status(503).json({ ready: false });
   });
 
-  app.get("/api/requests", (req, res) => {
+  // Data endpoints answer 503 until the first full sync is done.
+  const requireReady = (req, res, next) => {
+    if (sync?.ready) return next();
+    res.status(503).json({ error: "still loading helpdesk data" });
+  };
+
+  app.get("/api/requests", requireReady, (req, res) => {
     // TODO (level 4): filters, sorting and cursor pagination, see docs/contract.md.
     res.status(501).json({ error: "not implemented" });
   });
 
-  app.get("/api/sla-report", (req, res) => {
-    // TODO: implement the response-time report here.
-    // Query params: from=YYYY-MM-DD, to=YYYY-MM-DD.
-    // Use the client in src/helpdesk.js to call the helpdesk API.
-    res.status(501).json({ error: "not implemented" });
+  app.get("/api/sla-report", requireReady, (req, res) => {
+    const range = parseDateRange(req.query);
+    if (!range) {
+      return res.status(400).json({ error: "from and to must be YYYY-MM-DD dates with from <= to" });
+    }
+    res.json(buildReport(store.rows.values(), range.from, range.to));
   });
 
   return app;
