@@ -14,6 +14,7 @@
     td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .muted { color: #888; }
     nav a { margin-right: 12px; }
+    #csv { align-self: center; }
   </style>
 </head>
 <body>
@@ -40,6 +41,7 @@
     </label>
     <label>Per page <input type="number" name="limit" min="1" max="200" value="50" style="width:5em"></label>
     <button type="submit">Apply</button>
+    <a id="csv" href="#">Download CSV</a>
   </form>
   <p id="status" class="muted"></p>
   <table id="rows"></table>
@@ -104,6 +106,9 @@
       // Leave out empty filters so the API sees only what was chosen.
       query = [...new FormData(form)].filter(([, v]) => v !== "");
       pageNo = 1;
+      // The CSV has every matching row in the same order, so paging is left out.
+      document.getElementById("csv").href =
+        "/api/requests.csv?" + new URLSearchParams(query.filter(([k]) => k !== "limit"));
       load();
     });
     nextBtn.addEventListener("click", () => { pageNo += 1; load(nextCursor); });

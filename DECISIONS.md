@@ -76,6 +76,21 @@ I used Claude Code (Claude Opus) as a pair programmer throughout.
     example when it gets its first response. Paging from a snapshot fixed that, and a test
     covers it.
 
+## Client requests
+
+- **CSV export (2 Nov, 17:36 SGT).** Finance wanted the browse list in Excel monthly. Added
+  `GET /api/requests.csv` and a "Download CSV" link on the browse page.
+  - It reuses the same parameter validation, filtering and sorting code as `/api/requests`, so
+    the two can't drift apart. Invalid filters or sort give `400`.
+  - `limit` and `cursor` are ignored entirely, as requested, so even a stale cursor doesn't
+    fail the download.
+  - It reads the live rows; one download is a single request, so no snapshot is needed.
+  - Quoting follows RFC 4180: a field is quoted when it has a comma, quote or line break, and
+    quotes are doubled. Booleans are `true`/`false`, `null` is an empty field.
+  - Lines end in `\n`. There is no UTF-8 BOM, so the first line is exactly the specified
+    header. Current staff names are ASCII; if non-ASCII names appeared, Excel may need the
+    BOM, which I'd confirm with the client before adding.
+
 ## Trade-offs and what I would do next
 
 <!-- What you left out to stay within 3 hours, and what you would do with more time. -->
