@@ -86,6 +86,20 @@ test("a staff rename updates existing rows", () => {
   assert.equal(store.rows.get(1).responder, "Ben Tan");
 });
 
+test("reloading staff recomputes only rows whose responder changed name", () => {
+  const store = seeded();
+  store.apply(request());
+  store.apply(responded(1));
+  store.apply(request({ id: 2 }));
+  store.flush();
+  store.setStaff([{ id: 304, name: "Benjamin Tan" }, { id: 305, name: "Chloe Lim" }]);
+  assert.equal(store.dirty.size, 0); // 304 unchanged, 305 answered nothing
+  store.setStaff([{ id: 304, name: "Ben Tan" }]);
+  assert.deepEqual([...store.dirty], [1]);
+  store.flush();
+  assert.equal(store.rows.get(1).responder, "Ben Tan");
+});
+
 test("flush bumps the version only when something changed", () => {
   const store = seeded();
   store.apply(request());

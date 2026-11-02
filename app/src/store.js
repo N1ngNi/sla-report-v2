@@ -26,9 +26,18 @@ export class Store {
     this.markAllDirty();
   }
 
+  // Staff only affects responder names, so only rows whose responder was
+  // added, removed or renamed are recomputed.
   setStaff(staff) {
-    this.staff = new Map(staff.map((s) => [s.id, s]));
-    this.markAllDirty();
+    const next = new Map(staff.map((s) => [s.id, s]));
+    const changed = new Set();
+    for (const id of new Set([...this.staff.keys(), ...next.keys()])) {
+      if (this.staff.get(id)?.name !== next.get(id)?.name) changed.add(id);
+    }
+    this.staff = next;
+    for (const row of this.rows.values()) {
+      if (changed.has(row.responder_id)) this.dirty.add(row.id);
+    }
   }
 
   markAllDirty() {

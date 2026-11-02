@@ -1,5 +1,5 @@
 // The seven report rules from docs/rules.md as pure functions: no I/O, no clock.
-import { parseIsoUtc, parseDueAt, localDate, businessSeconds, businessMinutes } from "./time.js";
+import { parseIsoUtc, parseDueAt, localDate, businessSeconds } from "./time.js";
 
 const TARGET_MINUTES = { high: 60, medium: 240, low: 480 };
 const DEFAULT_TARGET_MINUTES = 480; // Rule 5: Low or null priority.
@@ -31,24 +31,23 @@ function targetMinutes(priority) {
 }
 
 // Rule 6: last completion strictly after the latest deadline. null when either is missing.
+// `events` is in time order, so walk back from the newest: the first completion
+// and the first parseable due_at found are the ones that count.
 function completedLate(events, timezone) {
-  let completion = null;
-  let deadline = null;
-  for (const e of events) {
-    if (e.status === "complete") completion = e;
-    const due = parseDueAt(e.due_at, timezone);
-    if (due != null) deadline = due;
+  const completion = events.findLast((e) => e.status === "complete");
+  if (!completion) return null; // never completed: no need to parse deadlines
+  for (let i = events.length - 1; i >= 0; i--) {
+    const deadline = parseDueAt(events[i].due_at, timezone);
+    if (deadline != null) return completion.at > deadline;
   }
-  if (!completion || deadline == null) return null;
-  return completion.at > deadline;
+  return null; // no deadline
 }
 
 // Why a response counts as 0 business minutes, for the page; null otherwise.
-function responseNote(createdAt, respondedAt, minutes, site, holidays) {
-  if (minutes > 0) return null;
+function responseNote(createdAt, respondedAt, seconds) {
+  if (seconds >= 60) return null;
   if (respondedAt < createdAt) return "before creation";
-  if (businessSeconds(createdAt, respondedAt, site, holidays) === 0) return "outside business hours";
-  return "under a minute";
+  return seconds === 0 ? "outside business hours" : "under a minute";
 }
 
 // One report row for a request. `holidays` is a Set of site-local "YYYY-MM-DD";
@@ -67,15 +66,17 @@ export function computeRow({ request, events, site, holidays, staff }) {
     response_elapsed_minutes: null, response_note: null,
   };
   if (first) {
-    // Rule 4: business time from creation to first response, 0 if the response came first.
-    const minutes = businessMinutes(createdAt, first.at, site, holidays);
+    // Rule 4: business seconds from creation to first response, floored to
+    // minutes; 0 if the response came first.
+    const seconds = businessSeconds(createdAt, first.at, site, holidays);
+    const minutes = Math.floor(seconds / 60);
     responder = {
       responder_id: first.actor_id,
       responder: staff.get(first.actor_id)?.name ?? first.actor_name ?? null,
       response_business_minutes: minutes,
       within_target: minutes <= targetMinutes(request.priority), // Rule 5
       response_elapsed_minutes: Math.floor((first.at - createdAt) / 60),
-      response_note: responseNote(createdAt, first.at, minutes, site, holidays),
+      response_note: responseNote(createdAt, first.at, seconds),
     };
   }
 
