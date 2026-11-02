@@ -108,6 +108,31 @@ test("business time is zero when the response is before creation", () => {
   assert.equal(businessMinutes(start, end, singapore, noHolidays), 0);
 });
 
+test("results don't depend on the order intervals are asked for", () => {
+  // A fresh site object gets a fresh calendar; ask for a late interval first,
+  // then an earlier one, so the calendar has to grow backwards.
+  const site = { ...singapore };
+  const late = businessMinutes(utc("2026-10-05T01:00:00Z"), utc("2026-10-05T02:00:00Z"), site, noHolidays);
+  const early = businessMinutes(utc("2026-08-07T09:00:00Z"), utc("2026-08-11T01:00:00Z"), site, noHolidays);
+  const middle = businessMinutes(utc("2026-09-01T01:00:00Z"), utc("2026-09-01T02:30:00Z"), site, noHolidays);
+  assert.deepEqual([late, early, middle], [60, 720, 90]);
+});
+
+test("a long wait counts every open day in between", () => {
+  // Mon 5 Oct 10:00 -> Thu 8 Oct 09:30 Singapore: 8 + 10 + 10 + 1.5 hours.
+  assert.equal(businessMinutes(utc("2026-10-05T02:00:00Z"), utc("2026-10-08T01:30:00Z"), singapore, noHolidays), 1770);
+  // Mon 5 Oct -> Mon 2 Nov 08:00 Singapore: 4 full weeks of 50 hours.
+  assert.equal(businessMinutes(utc("2026-10-05T00:00:00Z"), utc("2026-11-02T00:00:00Z"), singapore, noHolidays), 4 * 50 * 60);
+});
+
+test("a new holidays set is not served from an old calendar", () => {
+  const site = { ...singapore };
+  const start = utc("2026-08-07T09:00:00Z");
+  const end = utc("2026-08-11T01:00:00Z");
+  assert.equal(businessMinutes(start, end, site, new Set()), 720);
+  assert.equal(businessMinutes(start, end, site, new Set(["2026-08-10"])), 120);
+});
+
 test("a close time of 24:00 runs to midnight", () => {
   const lateHours = { ...officeHours, mon: { open: "20:00", close: "24:00" } };
   const site = { timezone: "Asia/Singapore", business_hours: lateHours };
