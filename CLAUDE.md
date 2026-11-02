@@ -37,7 +37,8 @@ test`, port 8080, service name `app`, `HELPDESK_URL` and `HELPDESK_TOKEN` read f
 boot    sites + holidays + staff -> replay /v1/changes -> in-memory store -> /ready = true
 store   requests by id, events by request id, staff by id
 rows    one computed report row per request, recomputed only when that request changes
-live    poll /v1/changes every 10-15 s with the latest cursor
+live    poll /v1/changes every 10 s with the latest cursor; re-read sites, holidays and
+        staff every 20 s (the feed has no events for business hours or holidays)
 report  filter rows by site-local created date -> aggregate per responder
 browse  keyset cursor over (sort value, id), base64 + HMAC so foreign cursors get 400
 ```

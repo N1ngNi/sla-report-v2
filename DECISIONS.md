@@ -111,10 +111,19 @@ I used Claude Code (Claude Opus) as a pair programmer throughout.
   a full recompute takes ~0.36 s (8x faster), and a staff reload ~37 ms instead of ~2.9 s
   (only rows whose responder was renamed are recomputed). Every row came out identical to the
   old version on the full practice dataset, and the original time tests are unchanged.
-- **Reference data** (sites, holidays, staff) is re-read every 5 minutes. A site or holiday
-  change recomputes every row (~0.4 s, blocking the event loop briefly). At 10x the data, the
-  bottleneck becomes the rate-limited initial feed replay (~8 min), so the next step there is
-  persisting the store and feed cursor.
+- **Reference data** (sites, holidays, staff) is re-read every **20 s**. A self-review found a
+  gap here: the change feed carries staff renames but **not** business-hours or holiday
+  changes. With the original 5-minute reload, such a change could take minutes to show,
+  against level 3's 60 s.
+  - At 20 s the worst case is about 30 s (reload interval plus one 10 s poll).
+  - The cost is 5 calls per reload, ~0.27 calls/s with feed polling, well under the observed
+    limit.
+  - Lists are compared in a canonical order (sorted by id or date), so a reordered response
+    doesn't trigger a needless full recompute.
+  - A real site or holiday change recomputes every row (~0.4 s, blocking the event loop
+    briefly). A staff change recomputes only that person's rows.
+  - At 10x the data, the bottleneck becomes the rate-limited initial feed replay (~8 min), so
+    the next step there is persisting the store and feed cursor.
 - **Browsing** reads from snapshots of the rows (the last 50 versions). A walk that outlives its
   snapshot falls back to keyset paging over live rows, which is still correct for rows whose
   sort value doesn't change. Cursors are signed with a per-process secret unless `CURSOR_SECRET`

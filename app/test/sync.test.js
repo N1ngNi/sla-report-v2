@@ -82,6 +82,44 @@ test("an expired cursor replays the feed from the start", async () => {
   assert.equal(sync.store.rows.size, 1);
 });
 
+test("a holiday added in the API shows up in rows on the next reference reload", async () => {
+  const holidays = [];
+  const client = fakeClient({
+    start: {
+      data: [
+        requestItem(1, { created_at: "2026-10-09T09:00:00Z" }), // Fri 17:00 Singapore
+        { seq: 2, type: "event.created", request_id: 1, event: { id: 10, status: "processing", at: Date.parse("2026-10-13T01:00:00Z") / 1000, actor_id: 304, actor_name: "Ben", due_at: null, reverts_id: null } }, // Tue 09:00
+      ],
+      next_cursor: "c1", has_more: false,
+    },
+    c1: { data: [], next_cursor: "c1", has_more: false },
+  });
+  const get = client.get;
+  client.get = async (path, params) => (path === "/v1/sites/11/holidays" ? { data: holidays } : get(path, params));
+  const sync = new Sync({ client, store: new Store(), referenceMs: 0 });
+  await sync.syncOnce();
+  assert.equal(sync.store.rows.get(1).response_business_minutes, 60 + 600 + 60); // Fri 1h, Mon 10h, Tue 1h
+  holidays.push({ date: "12/10/2026", name: "Made-up holiday" }); // Mon 12 Oct
+  await sync.syncOnce();
+  assert.equal(sync.store.rows.get(1).response_business_minutes, 60 + 60);
+});
+
+test("reordered but identical reference data is not treated as a change", async () => {
+  let staff = [{ id: 304, name: "Benjamin Tan" }, { id: 305, name: "Chloe Lim" }];
+  const client = fakeClient({ start: { data: [requestItem(1)], next_cursor: "c1", has_more: false }, c1: { data: [], next_cursor: "c1", has_more: false } });
+  const get = client.get;
+  client.get = async (path, params) => (path === "/v1/staff" ? { data: staff } : get(path, params));
+  const store = new Store();
+  let staffLoads = 0;
+  const setStaff = store.setStaff.bind(store);
+  store.setStaff = (s) => { staffLoads += 1; setStaff(s); };
+  const sync = new Sync({ client, store, referenceMs: 0 });
+  await sync.syncOnce();
+  staff = [...staff].reverse();
+  await sync.syncOnce();
+  assert.equal(staffLoads, 1);
+});
+
 test("reference data is reloaded only after referenceMs", async () => {
   const client = fakeClient({ start: { data: [], next_cursor: "c1", has_more: false }, c1: { data: [], next_cursor: "c1", has_more: false } });
   const sync = new Sync({ client, store: new Store(), referenceMs: 60_000 });
