@@ -1,5 +1,5 @@
 // The seven report rules from docs/rules.md as pure functions: no I/O, no clock.
-import { parseIsoUtc, parseDueAt, localDate, businessMinutes } from "./time.js";
+import { parseIsoUtc, parseDueAt, localDate, businessSeconds, businessMinutes } from "./time.js";
 
 const TARGET_MINUTES = { high: 60, medium: 240, low: 480 };
 const DEFAULT_TARGET_MINUTES = 480; // Rule 5: Low or null priority.
@@ -43,6 +43,14 @@ function completedLate(events, timezone) {
   return completion.at > deadline;
 }
 
+// Why a response counts as 0 business minutes, for the page; null otherwise.
+function responseNote(createdAt, respondedAt, minutes, site, holidays) {
+  if (minutes > 0) return null;
+  if (respondedAt < createdAt) return "before creation";
+  if (businessSeconds(createdAt, respondedAt, site, holidays) === 0) return "outside business hours";
+  return "under a minute";
+}
+
 // One report row for a request. `holidays` is a Set of site-local "YYYY-MM-DD";
 // `staff` maps staff id to {id, name} with current names.
 export function computeRow({ request, events, site, holidays, staff }) {
@@ -54,7 +62,10 @@ export function computeRow({ request, events, site, holidays, staff }) {
   // Rule 3: first processing event by a person (System events have no actor_id).
   const first = timeline.find((e) => e.status === "processing" && e.actor_id != null);
 
-  let responder = { responder_id: null, responder: null, response_business_minutes: null, within_target: null };
+  let responder = {
+    responder_id: null, responder: null, response_business_minutes: null, within_target: null,
+    response_elapsed_minutes: null, response_note: null,
+  };
   if (first) {
     // Rule 4: business time from creation to first response, 0 if the response came first.
     const minutes = businessMinutes(createdAt, first.at, site, holidays);
@@ -63,6 +74,8 @@ export function computeRow({ request, events, site, holidays, staff }) {
       responder: staff.get(first.actor_id)?.name ?? first.actor_name ?? null,
       response_business_minutes: minutes,
       within_target: minutes <= targetMinutes(request.priority), // Rule 5
+      response_elapsed_minutes: Math.floor((first.at - createdAt) / 60),
+      response_note: responseNote(createdAt, first.at, minutes, site, holidays),
     };
   }
 

@@ -54,6 +54,19 @@ test("GET /api/sla-report returns the contract shape", async () => {
   });
 });
 
+test("details=true adds the page-only fields to both endpoints", async () => {
+  const noted = { ...row, response_business_minutes: 0, response_elapsed_minutes: 90, response_note: "outside business hours" };
+  const deps = { store: { rows: new Map([[1, noted]]), version: 1 }, sync: { ready: true } };
+  await withServer(deps, async (get) => {
+    const plain = (await (await get("/api/sla-report?from=2026-10-01&to=2026-10-31")).json()).requests[0];
+    assert.equal("response_note" in plain, false);
+    const report = (await (await get("/api/sla-report?from=2026-10-01&to=2026-10-31&details=true")).json()).requests[0];
+    assert.equal(report.response_note, "outside business hours");
+    const browse = (await (await get("/api/requests?from=2026-10-01&to=2026-10-31&details=true")).json()).data[0];
+    assert.equal(browse.response_elapsed_minutes, 90);
+  });
+});
+
 test("GET /api/requests pages rows and rejects bad parameters", async () => {
   await withServer({ ...readyDeps, store: { rows: readyDeps.store.rows, version: 1 } }, async (get) => {
     const res = await get("/api/requests?from=2026-10-01&to=2026-10-31&sort=-response_business_minutes");

@@ -14,18 +14,25 @@ export function parseDateRange(query) {
   return { from, to };
 }
 
-// The public shape of a row: everything except our internal created_date.
-export function publicRow({ created_date, ...row }) {
-  return row;
+// `?details=true` (sent by our own pages, not part of the contract) adds the
+// page-only fields that explain a 0-minute response.
+export function wantsDetails(query) {
+  return query.details === "true";
+}
+
+// The contract shape of a row. With `details`, also the page-only fields
+// response_elapsed_minutes and response_note. created_date never leaves.
+export function publicRow({ created_date, response_elapsed_minutes, response_note, ...row }, details = false) {
+  return details ? { ...row, response_elapsed_minutes, response_note } : row;
 }
 
 // Rows whose site-local created date is within [from, to], plus a summary per responder.
-export function buildReport(rows, from, to) {
+export function buildReport(rows, from, to, { details = false } = {}) {
   const requests = [];
   const responders = new Map();
   for (const row of rows) {
     if (row.created_date < from || row.created_date > to) continue;
-    requests.push(publicRow(row));
+    requests.push(publicRow(row, details));
     if (row.responder_id == null) continue;
     let summary = responders.get(row.responder_id);
     if (!summary) {

@@ -5,7 +5,7 @@
 // value changes meanwhile. If the snapshot has been evicted, the walk carries
 // on over live rows from the last (sort value, id) it returned.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { parseDateRange, publicRow } from "./report.js";
+import { parseDateRange, publicRow, wantsDetails } from "./report.js";
 
 const SORTS = ["id", "-id", "response_business_minutes", "-response_business_minutes"];
 const DEFAULT_LIMIT = 50;
@@ -16,7 +16,10 @@ const POSITIVE_INT = /^[1-9]\d*$/;
 export function parseBrowseQuery(query, browser) {
   const range = parseDateRange(query);
   if (!range) return { error: "from and to must be YYYY-MM-DD dates with from <= to" };
-  const params = { ...range, site_id: null, responder_id: null, late: null, within_target: null, sort: "id", limit: DEFAULT_LIMIT };
+  const params = {
+    ...range, site_id: null, responder_id: null, late: null, within_target: null,
+    sort: "id", limit: DEFAULT_LIMIT, details: wantsDetails(query),
+  };
 
   for (const key of ["site_id", "responder_id"]) {
     if (query[key] === undefined) continue;
@@ -108,7 +111,7 @@ export class Browser {
     const next_cursor = selected.length > p.limit
       ? this.encodeCursor({ v: snap.version, k: last.key, q: queryKey(p) })
       : null;
-    return { data: data.map(({ row }) => publicRow(row)), next_cursor };
+    return { data: data.map(({ row }) => publicRow(row, p.details)), next_cursor };
   }
 
   sign(body) {

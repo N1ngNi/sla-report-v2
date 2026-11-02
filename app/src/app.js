@@ -1,7 +1,7 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseDateRange, buildReport } from "./report.js";
+import { parseDateRange, buildReport, wantsDetails } from "./report.js";
 import { parseBrowseQuery, Browser } from "./browse.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,7 @@ export function createApp({ store, sync } = {}) {
     if (!range) {
       return res.status(400).json({ error: "from and to must be YYYY-MM-DD dates with from <= to" });
     }
-    res.json(buildReport(store.rows.values(), range.from, range.to));
+    res.json(buildReport(store.rows.values(), range.from, range.to, { details: wantsDetails(req.query) }));
   });
 
   return app;

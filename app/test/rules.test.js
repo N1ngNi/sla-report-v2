@@ -232,10 +232,45 @@ test("never completed or no deadline leaves completed_late null", () => {
   assert.equal(row(request(), noDeadline).completed_late, null);
 });
 
-test("a row has exactly the contract fields plus created_date", () => {
+test("a row has the contract fields plus internal created_date and page-only fields", () => {
   const r = row(request(), [event()]);
   assert.deepEqual(Object.keys(r).sort(), [
     "completed_late", "created_date", "id", "responder", "responder_id",
-    "response_business_minutes", "site_id", "within_target",
+    "response_business_minutes", "response_elapsed_minutes", "response_note",
+    "site_id", "within_target",
   ]);
+});
+
+// Page-only explanation of 0-minute responses
+
+test("a response inside business hours has elapsed minutes and no note", () => {
+  const r = row(request(), [event({ at: at("2026-10-05T01:42:30Z") })]);
+  assert.equal(r.response_elapsed_minutes, 42);
+  assert.equal(r.response_note, null);
+});
+
+test("a response outside business hours is explained", () => {
+  // Created Mon 5 Oct 06:00, answered 07:30 Singapore: before opening.
+  const r = row(request({ created_at: "2026-10-04T22:00:00Z" }), [event({ at: at("2026-10-04T23:30:00Z") })]);
+  assert.equal(r.response_business_minutes, 0);
+  assert.equal(r.response_elapsed_minutes, 90);
+  assert.equal(r.response_note, "outside business hours");
+});
+
+test("a response logged before creation is explained", () => {
+  const r = row(request(), [event({ at: at("2026-10-05T00:59:56Z") })]);
+  assert.equal(r.response_business_minutes, 0);
+  assert.equal(r.response_note, "before creation");
+});
+
+test("a response within the first business minute is explained", () => {
+  const r = row(request(), [event({ at: at("2026-10-05T01:00:40Z") })]);
+  assert.equal(r.response_business_minutes, 0);
+  assert.equal(r.response_note, "under a minute");
+});
+
+test("no response leaves the page-only fields null", () => {
+  const r = row(request({ status: "pending" }), []);
+  assert.equal(r.response_elapsed_minutes, null);
+  assert.equal(r.response_note, null);
 });

@@ -56,8 +56,15 @@ test("buildReport keeps rows whose local created date is in range, inclusive", (
 });
 
 test("buildReport returns contract-shaped rows without internal fields", () => {
-  const report = buildReport([row({})], "2026-10-01", "2026-10-31");
-  assert.equal("created_date" in report.requests[0], false);
+  const withNotes = row({ response_elapsed_minutes: 90, response_note: "outside business hours" });
+  const plain = buildReport([withNotes], "2026-10-01", "2026-10-31").requests[0];
+  assert.deepEqual(Object.keys(plain).sort(), [
+    "completed_late", "id", "responder", "responder_id", "response_business_minutes", "site_id", "within_target",
+  ]);
+  const detailed = buildReport([withNotes], "2026-10-01", "2026-10-31", { details: true }).requests[0];
+  assert.equal(detailed.response_note, "outside business hours");
+  assert.equal(detailed.response_elapsed_minutes, 90);
+  assert.equal("created_date" in detailed, false);
 });
 
 test("buildReport summarises each responder", () => {
